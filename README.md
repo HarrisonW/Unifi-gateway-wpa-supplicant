@@ -87,7 +87,7 @@ SSH back into your gateway, and create the following file.
 ```
 #!/bin/sh
 
-if [ "$IFACE" = eth1 ]; then
+if [ "$IFACE" = eth8 ]; then
   ip link set dev "$IFACE" address XX:XX:XX:XX:XX:XX
 fi
 ```
@@ -97,7 +97,7 @@ Set the permissions:
 ```
 > sudo chmod 755 /etc/network/if-up.d/changemac
 ```
-This file will spoof your WAN mac address when `eth1` starts up. Go ahead and run the same command now so you don't have to reboot your gateway.
+This file will spoof your WAN mac address when `eth8` starts up. Go ahead and run the same command now so you don't have to reboot your gateway.
 ```
 > ip link set dev "$IFACE" address XX:XX:XX:XX:XX:XX
 ```
@@ -119,7 +119,7 @@ Apply the change, then unplug the ethernet cable from the ONT port on your ATT G
 ## Test wpa_supplicant
 While SSHed into the gateway, run this to test the authentication.
 ```
-> wpa_supplicant -i eth1 -D wired -c /etc/wpa_supplicant/wpa_supplicant.conf
+> wpa_supplicant -i eth8 -D wired -c /etc/wpa_supplicant/wpa_supplicant.conf
 ```
 Breaking down this command...
 - `-i eth1` Specifies `eth1` (UXG-Lite WAN port) as the interface
@@ -130,10 +130,10 @@ You should see the message `Successfully initialized wpa_supplicant` if the comm
 
 Following that will be some logs from authenticating. If it looks something like this, then it was successful!
 ```
-eth1: CTRL-EVENT-EAP-PEER-CERT depth=0 subject='/C=US/ST=Michigan/L=Southfield/O=ATT Services Inc/OU=OCATS/CN=aut03lsanca.lsanca.sbcglobal.net' hash=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-eth1: CTRL-EVENT-EAP-PEER-ALT depth=0 DNS:aut03lsanca.lsanca.sbcglobal.net
-eth1: CTRL-EVENT-EAP-SUCCESS EAP authentication completed successfully
-eth1: CTRL-EVENT-CONNECTED - Connection to XX:XX:XX:XX:XX:XX completed [id=0 id_str=]
+eth8: CTRL-EVENT-EAP-PEER-CERT depth=0 subject='/C=US/ST=Michigan/L=Southfield/O=ATT Services Inc/OU=OCATS/CN=aut03lsanca.lsanca.sbcglobal.net' hash=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+eth8: CTRL-EVENT-EAP-PEER-ALT depth=0 DNS:aut03lsanca.lsanca.sbcglobal.net
+eth8: CTRL-EVENT-EAP-SUCCESS EAP authentication completed successfully
+eth8: CTRL-EVENT-CONNECTED - Connection to XX:XX:XX:XX:XX:XX completed [id=0 id_str=]
 ```
 > [!TIP]
 > If you don't see the `EAP authentication completed successfully` message, try checking to make sure the MAC address was spoofed successfully.
@@ -145,25 +145,25 @@ Now we have to make sure wpa_supplicant starts automatically when the Unifi gate
 
 Let's use wpa_supplicant's built in interface-specific service to enable it on startup. More information [here](https://wiki.archlinux.org/title/Wpa_supplicant#At_boot_.28systemd.29).
 
-Because we need to specify the `wired` driver and `eth1` interface, the corresponding service will be `wpa_supplicant-wired@eth1.service`. This service is tied to a specific .conf file, so we will have to rename our config file.
+Because we need to specify the `wired` driver and `eth8` interface, the corresponding service will be `wpa_supplicant-wired@eth8.service`. This service is tied to a specific .conf file, so we will have to rename our config file.
 
-Back in `/etc/wpa_supplicant`, rename `wpa_supplicant.conf` to `wpa_supplicant-wired-eth1.conf`.
+Back in `/etc/wpa_supplicant`, rename `wpa_supplicant.conf` to `wpa_supplicant-wired-eth8.conf`.
 ```
 > cd /etc/wpa_supplicant
-> mv wpa_supplicant.conf wpa_supplicant-wired-eth1.conf
+> mv wpa_supplicant.conf wpa_supplicant-wired-eth8.conf
 ```
 
 Then start the service and check the status.
 ```
-> systemctl start wpa_supplicant-wired@eth1
+> systemctl start wpa_supplicant-wired@eth8
 
-> systemctl status wpa_supplicant-wired@eth1
+> systemctl status wpa_supplicant-wired@eth8
 ```
 If the service successfully started and is active, you should see similar logs as when we tested with the `wpa_supplicant` command.
 
 Now we can go ahead and enable the service.
 ```
-> systemctl enable wpa_supplicant-wired@eth1
+> systemctl enable wpa_supplicant-wired@eth8
 ```
 
 Try restarting your Unifi gateway if you wish, and it should automatically authenticate!
@@ -205,8 +205,8 @@ Wants=basic.target sysinit.target
 [Service]
 Type=oneshot
 ExecStartPre=/bin/sh -c 'dpkg -Ri /etc/wpa_supplicant/packages'
-ExecStart=/bin/sh -c 'systemctl start wpa_supplicant-wired@eth1'
-ExecStartPost=/bin/sh -c 'systemctl enable wpa_supplicant-wired@eth1'
+ExecStart=/bin/sh -c 'systemctl start wpa_supplicant-wired@eth8'
+ExecStartPost=/bin/sh -c 'systemctl enable wpa_supplicant-wired@eth8'
 Restart=on-failure
 
 [Install]
@@ -223,20 +223,20 @@ This service should run on startup. It will check if `/sbin/wpa_supplicant` got 
 <summary><h3>(Optional) If you want to test this...</h3></summary>
 
 ```
-> systemctl stop wpa_supplicant-wired@eth1
-> systemctl disable wpa_supplicant-wired@eth1
+> systemctl stop wpa_supplicant-wired@eth8
+> systemctl disable wpa_supplicant-wired@eth8
 > apt remove wpasupplicant -y
 ```
 
-Now try restarting your gateway. Upon boot up, SSH back in, and check `systemctl status wpa_supplicant-wired@eth1`.
-- Alternatively, without a restart, run `systemctl start reinstall.service`, wait until it finishes, then `systemctl status wpa_supplicant-wired@eth1`.)
+Now try restarting your gateway. Upon boot up, SSH back in, and check `systemctl status wpa_supplicant-wired@eth8`.
+- Alternatively, without a restart, run `systemctl start reinstall.service`, wait until it finishes, then `systemctl status wpa_supplicant-wired@eth8`.)
 
 You should see the following:
 ```
 Loaded: loaded (/lib/systemd/system/wpa_supplicant-wired@.service; enabled; vendor preset: enabled)
 Active: active (running) ...
 ...
-Dec 29 23:20:00 UXG-Lite wpa_supplicant[6845]: eth1: CTRL-EVENT-EAP-SUCCESS EAP authentication completed successfully
+Dec 29 23:20:00 UXG-Lite wpa_supplicant[6845]: eth8: CTRL-EVENT-EAP-SUCCESS EAP authentication completed successfully
 ```
 </details>
 
@@ -252,7 +252,7 @@ etc
 │   └── system
 │       └── **reinstall-wpa.service**
 └── wpa_supplicant
-    ├── **wpa_supplicant-wired-eth1.conf**
+    ├── **wpa_supplicant-wired-eth8.conf**
     ├── certs
     │   ├── CA_XXX.pem
     │   ├── Client_XXX.pem
