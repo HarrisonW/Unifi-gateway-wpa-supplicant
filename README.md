@@ -1,7 +1,7 @@
 # Unifi Gateway wpa_supplicant bypass for ATT fiber modem
 Use this guide to setup wpa_supplicant with your Unifi gateway to bypass the ATT modem.
 
-This will work on any modern [Unifi Console or Gateway](https://www.reddit.com/r/Ubiquiti/comments/1870ryr/unifi_gateways_explained_as_simple_as_possible/). To my knowledge, that includes everything except the original USG which will have a different process that is already well documented over the years (check [Additional resources](#additional-resources)).
+This will work on any modern [Unifi Console or Gateway](https://www.reddit.com/r/Ubiquiti/comments/1870ryr/unifi_gateways_explained_as_simple_as_possible/) running UniFi OS 3.x or 4.x. To my knowledge, that includes everything except the original USG which will have a different process that is already well documented over the years (check [Additional resources](#additional-resources)).
 
 > [!IMPORTANT]
 > Take note of your Unifi gateway's WAN port interface name. In the rest of the guide, I'll be using `eth1` because that is the WAN interface for the UXG Lite. If using another Unifi gateway, replace the interface name appropriately.
@@ -17,13 +17,13 @@ Here are some known interfaces for Unifi gateways, for use in the rest of the gu
 ### Prerequisites:
 - extracted and decoded certificates from an ATT modem
 
-Instructions to [extract certs for newish BGW210](https://github.com/mozzarellathicc/attcerts)
+Instructions to [extract certs from BGW210/BGW320](https://github.com/0x888e/certs)
 
 ## Table of Contents
 - [Install wpa_supplicant](#install-wpa_supplicant-on-unifi-gateway) - install wpasupplicant on your Unifi gateway
 - [Copy certs and config](#copy-certs-and-config-to-unifi-gateway) - copy files generated from mfg_dat_decode tool into Unifi gateway
 - [Spoof MAC Address](#spoof-mac-address) - spoof Unifi WAN port to match original ATT gateway MAC address
-- [Setup network](#setup-network) - set required network settings (VLAN0) in Unifi dashboard
+- [Set Unifi network settings](#set-unifi-network-settings) - set required network settings (VLAN0) in Unifi dashboard
 - [Test wpa_supplicant](#test-wpa_supplicant) - test wpasupplicant
 - [Setup wpa_supplicant service for startup](#setup-wpa_supplicant-service-for-startup) - start wpasupplicant on Unifi gateway bootup
 - [Survive firmware updates](#survive-firmware-updates) - automatically restore and setup wpasupplicant after firmware updates wipe it
@@ -61,7 +61,7 @@ These files come from the mfg_dat_decode tool:
 > scp wpa_supplicant.conf <gateway>:/etc/wpa_supplicant
 ```
 
-> [!IMPORTANT]
+> [!WARNING]
 Make sure in the `wpa_supplicant.conf` to modify the `ca_cert`, `client_cert` and `private_key` to use **absolute paths**. In this case, prepend `/etc/wpa_supplicant/certs/` to the filename strings. It should look like the following...
 ```
 ...
@@ -76,9 +76,12 @@ network={
 ## Spoof MAC address
 We'll need to spoof the MAC address on the WAN port (interface `eth1` on the UXG-Lite) to successfully authenticate with ATT with our certificates.
 
-I know there's an option in the Unifi dashboard to spoof MAC address on the Internet (WAN) network, but this didn't seem to work when I tested it. (If anyone does test this successfully without needing the following, please let me know).
+In the Unifi dashboard, go to `Settings` -> `Internet` and select your WAN. Enable `MAC Address Clone` and paste the MAC address with your ATT gateway's address.
 
-Instead, I had to manually set it up, based on these [instructions to spoof mac address](https://www.xmodulo.com/spoof-mac-address-network-interface-linux.html).
+> [!TIP]
+> If the above setting works for you, the rest of this section can be skipped.
+
+Using the Unifi dashboard didn't seem to work for me (did not test extensively), and I had to manually set it up instead, based on these [instructions to spoof mac address](https://www.xmodulo.com/spoof-mac-address-network-interface-linux.html).
 
 SSH back into your gateway, and create the following file.
 
@@ -102,7 +105,10 @@ This file will spoof your WAN mac address when `eth8` starts up. Go ahead and ru
 > ip link set dev "$IFACE" address XX:XX:XX:XX:XX:XX
 ```
 
-## Setup network
+## Set Unifi network settings
+
+> [!CAUTION]
+> This section may not be applicable depending on your hardware configuration, especially if using an SFP bypass module.
 
 ### Set VLAN ID on WAN connection
 ATT authenticates using VLAN ID 0, so we have to tag our WAN port with that.
@@ -125,6 +131,11 @@ Breaking down this command...
 - `-i eth1` Specifies `eth1` (UXG-Lite WAN port) as the interface
 - `-D wired` Specify driver type of `eth1`
 - `-c <path-to>/wpa_supplicant.conf` The config file
+
+> [!TIP]
+> If troubleshooting is needed, add the parameter `-C /var/run/wpa_supplicant -B` to run in the background and allow the `wpa_cli` utility to connect.
+>
+> This can also be achieved in the `wpa_supplicant.conf` file by adding the line `ctrl_interface=DIR=/var/run/wpa_supplicant`, which will also apply when we later have wpa_supplicant service run automatically.
 
 You should see the message `Successfully initialized wpa_supplicant` if the command and config are configured correctly.
 
@@ -180,7 +191,7 @@ First download the required packages (with missing dependencies) from debian int
 ```
 > mkdir -p /etc/wpa_supplicant/packages
 > cd /etc/wpa_supplicant/packages
-> wget http://ftp.us.debian.org/debian/pool/main/w/wpa/wpasupplicant_2.9.0-21_arm64.deb
+> wget http://ftp.us.debian.org/debian/pool/main/w/wpa/wpasupplicant_2.9.0-21+deb11u2_arm64.deb
 > wget http://ftp.us.debian.org/debian/pool/main/p/pcsc-lite/libpcsclite1_1.9.1-1_arm64.deb
 ```
 
@@ -199,8 +210,8 @@ Description=Reinstall and start/enable wpa_supplicant
 AssertPathExistsGlob=/etc/wpa_supplicant/packages/wpasupplicant*arm64.deb
 AssertPathExistsGlob=/etc/wpa_supplicant/packages/libpcsclite1*arm64.deb
 ConditionPathExists=!/sbin/wpa_supplicant
-After=basic.target sysinit.target
-Wants=basic.target sysinit.target
+After=network-online.target
+Requires=network-online.target
 
 [Service]
 Type=oneshot
